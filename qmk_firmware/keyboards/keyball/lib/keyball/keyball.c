@@ -142,7 +142,7 @@ void keyboard_pre_init_kb(void) {
 }
 #endif
 
-void pointing_device_driver_init(void) {
+bool pointing_device_driver_init(void) {
 #if KEYBALL_MODEL != 46
     keyball.this_have_ball = pmw3360_init();
 #endif
@@ -157,7 +157,9 @@ void pointing_device_driver_init(void) {
 #    endif
 #endif
         pmw3360_cpi_set(CPI_DEFAULT - 1);
+        return true;
     }
+    return false;
 }
 
 uint16_t pointing_device_driver_get_cpi(void) {
