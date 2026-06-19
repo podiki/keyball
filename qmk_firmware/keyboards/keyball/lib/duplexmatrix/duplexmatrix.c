@@ -145,7 +145,7 @@ extern matrix_row_t matrix[MATRIX_ROWS];
 uint8_t matrix_scan(void) {
     bool changed = duplex_scan(raw_matrix);
 
-    debounce(raw_matrix, matrix + thisHand, ROWS_PER_HAND, changed);
+    debounce(raw_matrix, matrix + thisHand, changed);
 
 #ifdef SPLIT_KEYBOARD
     if (!is_keyboard_master()) {
