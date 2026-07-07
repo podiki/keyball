@@ -25,9 +25,7 @@ SPLIT_KEYBOARD = yes
 
 # Optical sensor driver for trackball.
 POINTING_DEVICE_ENABLE = yes
-POINTING_DEVICE_DRIVER = custom
-SRC += drivers/pmw3360/pmw3360.c
-QUANTUM_LIB_SRC += spi_master.c # Optical sensor use SPI to communicate
+POINTING_DEVICE_DRIVER = pmw3360
 
 # This is unnecessary for processing MS_BTN*.
 MOUSEKEY_ENABLE = no

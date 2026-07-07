@@ -21,12 +21,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #endif
 
 #include "keyball.h"
-#include "drivers/pmw3360/pmw3360.h"
 
 #include <string.h>
 
 const uint8_t CPI_DEFAULT    = KEYBALL_CPI_DEFAULT / 100;
-const uint8_t CPI_MAX        = pmw3360_MAXCPI + 1;
+/**
+ * The Keyball library uses a range of 0 <= cpi <= 119 internally, and the true
+ * CPI value is ( cpi + 1 ) * 100.
+ */
+const uint8_t CPI_MAX        = KEYBALL_PMW3360_MAXCPI + 1; // 119 + 1 = 12000 CPI actual
 const uint8_t SCROLL_DIV_MAX = 7;
 
 const uint16_t AML_TIMEOUT_MIN = 100;
@@ -70,14 +73,6 @@ static int16_t add16(int16_t a, int16_t b) {
     } else if (a < 0 && b < 0 && r >= 0) {
         r = -32768;
     }
-    return r;
-}
-
-// divmod16 divides *v by div, returns the quotient, and assigns the remainder
-// to *v.
-static int16_t divmod16(int16_t *v, int16_t div) {
-    int16_t r = *v / div;
-    *v -= r * div;
     return r;
 }
 
@@ -132,72 +127,25 @@ static void add_scroll_div(int8_t delta) {
 
 //////////////////////////////////////////////////////////////////////////////
 // Pointing device driver
-
-#if KEYBALL_MODEL == 46
-void keyboard_pre_init_kb(void) {
-    keyball.this_have_ball = pmw3360_init();
-    keyboard_pre_init_user();
-}
-#endif
-
-bool pointing_device_driver_init(void) {
-#if KEYBALL_MODEL != 46
-    keyball.this_have_ball = pmw3360_init();
-#endif
-    if (keyball.this_have_ball) {
-#if defined(KEYBALL_PMW3360_UPLOAD_SROM_ID)
-#    if KEYBALL_PMW3360_UPLOAD_SROM_ID == 0x04
-        pmw3360_srom_upload(pmw3360_srom_0x04);
-#    elif KEYBALL_PMW3360_UPLOAD_SROM_ID == 0x81
-        pmw3360_srom_upload(pmw3360_srom_0x81);
-#    else
-#        error Invalid value for KEYBALL_PMW3360_UPLOAD_SROM_ID. Please choose 0x04 or 0x81 or disable it.
-#    endif
-#endif
-        pmw3360_cpi_set(CPI_DEFAULT - 1);
-        return true;
-    }
-    return false;
+void pointing_device_init_kb(void) {
+  keyball.this_have_ball = true;
+  keyball_set_cpi(CPI_DEFAULT);
 }
 
-uint16_t pointing_device_driver_get_cpi(void) {
-    return keyball_get_cpi();
-}
-
-void pointing_device_driver_set_cpi(uint16_t cpi) {
-    keyball_set_cpi(cpi);
-}
-
-__attribute__((weak)) void keyball_on_apply_motion_to_mouse_move(keyball_motion_t *m, report_mouse_t *r, bool is_left) {
-#if KEYBALL_MODEL == 61 || KEYBALL_MODEL == 39 || KEYBALL_MODEL == 147 || KEYBALL_MODEL == 44
-    r->x = clip2int8(m->y);
-    r->y = clip2int8(m->x);
-    if (is_left) {
-        r->x = -r->x;
-        r->y = -r->y;
-    }
-#elif KEYBALL_MODEL == 46
-    r->x = clip2int8(m->x);
-    r->y = -clip2int8(m->y);
-#else
-#    error("unknown Keyball model")
-#endif
-    // clear motion
-    m->x = 0;
-    m->y = 0;
-}
-
-__attribute__((weak)) void keyball_on_apply_motion_to_mouse_scroll(keyball_motion_t *m, report_mouse_t *r, bool is_left) {
+__attribute__((weak)) void keyball_on_apply_motion_to_mouse_scroll(keyball_motion_t *m, report_mouse_t *r) {
     // consume motion of trackball.
     int16_t div = 1 << (keyball_get_scroll_div() - 1);
-    int16_t x = divmod16(&m->x, div);
-    int16_t y = divmod16(&m->y, div);
+    int16_t x = r->x / div;
+    r->x = 0;
+    int16_t y = r->y / div;
+    r->y = 0;
+
 
     // apply to mouse report.
 #if KEYBALL_MODEL == 61 || KEYBALL_MODEL == 39 || KEYBALL_MODEL == 147 || KEYBALL_MODEL == 44
-    r->h = clip2int8(y);
-    r->v = -clip2int8(x);
-    if (is_left) {
+    r->h = clip2int8(x);
+    r->v = -clip2int8(y);
+    if (is_keyboard_left()) {
         r->h = -r->h;
         r->v = -r->v;
     }
@@ -237,15 +185,17 @@ __attribute__((weak)) void keyball_on_apply_motion_to_mouse_scroll(keyball_motio
 #endif
 }
 
-static void motion_to_mouse(keyball_motion_t *m, report_mouse_t *r, bool is_left, bool as_scroll) {
+static void pointing_device_task_keyball(keyball_motion_t *m, report_mouse_t *r, bool as_scroll) {
     if (as_scroll) {
-        keyball_on_apply_motion_to_mouse_scroll(m, r, is_left);
+        keyball_on_apply_motion_to_mouse_scroll(m, r);
     } else {
-        keyball_on_apply_motion_to_mouse_move(m, r, is_left);
+        // clear
+        m->x = 0;
+        m->y = 0;
     }
 }
 
-static inline bool should_report(void) {
+static inline bool should_report(void/* report_mouse_t *r */) {
     uint32_t now = timer_read32();
 #if defined(KEYBALL_REPORTMOUSE_INTERVAL) && KEYBALL_REPORTMOUSE_INTERVAL > 0
     // throttling mouse report rate.
@@ -266,24 +216,25 @@ static inline bool should_report(void) {
     return true;
 }
 
-report_mouse_t pointing_device_driver_get_report(report_mouse_t rep) {
-    // fetch from optical sensor.
+report_mouse_t pointing_device_task_kb(report_mouse_t rep) {
     if (keyball.this_have_ball) {
-        pmw3360_motion_t d = {0};
-        if (pmw3360_motion_burst(&d)) {
-            ATOMIC_BLOCK_FORCEON {
-                keyball.this_motion.x = add16(keyball.this_motion.x, d.x);
-                keyball.this_motion.y = add16(keyball.this_motion.y, d.y);
-            }
+        ATOMIC_BLOCK_FORCEON {
+            keyball.this_motion.x = add16(keyball.this_motion.x, rep.x);
+            keyball.this_motion.y = add16(keyball.this_motion.y, rep.y);
         }
     }
     // report mouse event, if keyboard is primary.
-    if (is_keyboard_master() && should_report()) {
-        // modify mouse report by PMW3360 motion.
-        motion_to_mouse(&keyball.this_motion, &rep, is_keyboard_left(), keyball.scroll_mode);
-        motion_to_mouse(&keyball.that_motion, &rep, !is_keyboard_left(), keyball.scroll_mode ^ keyball.this_have_ball);
-        // store mouse report for OLED.
-        keyball.last_mouse = rep;
+    if (is_keyboard_master() /* && should_report(&rep) */) {
+        if (should_report()) {
+            pointing_device_task_keyball(&keyball.this_motion, &rep, keyball.scroll_mode);
+            // store mouse report for OLED.
+            keyball.last_mouse = rep;
+            //rep = pointing_device_task_user(rep);
+        }
+        else {
+            rep.x = 0;
+            rep.y = 0;
+        }
     }
     return rep;
 }
@@ -550,7 +501,8 @@ void keyball_set_scroll_div(uint8_t div) {
 }
 
 uint8_t keyball_get_cpi(void) {
-    return keyball.cpi_value == 0 ? CPI_DEFAULT : keyball.cpi_value;
+    //return keyball.cpi_value == 0 ? CPI_DEFAULT : keyball.cpi_value;
+  return pointing_device_get_cpi() / 100;
 }
 
 void keyball_set_cpi(uint8_t cpi) {
@@ -560,7 +512,15 @@ void keyball_set_cpi(uint8_t cpi) {
     keyball.cpi_value   = cpi;
     keyball.cpi_changed = true;
     if (keyball.this_have_ball) {
-        pmw3360_cpi_set(cpi == 0 ? CPI_DEFAULT - 1 : cpi - 1);
+        /**
+         * QMK's core PMW3360 driver uses the true CPI value internally, so we
+         * have to translate the Keyball library's value to QMK's expected
+         * range.
+         *
+         * QMK's core driver also caps the range internally to a valid CPI
+         * value, so we don't need to do it here.
+         */
+        pointing_device_set_cpi((cpi + 1) * 100);
     }
 }
 

@@ -24,6 +24,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #    define KEYBALL_CPI_DEFAULT 500
 #endif
 
+#ifndef KEYBALL_PMW3360_MAXCPI
+#    define KEYBALL_PMW3360_MAXCPI 119 // 12000 CPI actual
+#endif
+
 #ifndef KEYBALL_SCROLL_DIV_DEFAULT
 #    define KEYBALL_SCROLL_DIV_DEFAULT 4 // 4: 1/8 (1/2^(n-1))
 #endif
@@ -198,15 +202,10 @@ extern keyball_t keyball;
 /// keyball_on_adjust_layout is called when the keyboard layout adjustted
 void keyball_on_adjust_layout(keyball_adjust_t v);
 
-/// keyball_on_apply_motion_to_mouse_move applies trackball's motion m to r as
-/// mouse movement.
-/// You can change the default algorithm by override this function.
-void keyball_on_apply_motion_to_mouse_move(keyball_motion_t *m, report_mouse_t *r, bool is_left);
-
 /// keyball_on_apply_motion_to_mouse_scroll applies trackball's motion m to r
 /// as mouse scroll.
 /// You can change the default algorithm by override this function.
-void keyball_on_apply_motion_to_mouse_scroll(keyball_motion_t *m, report_mouse_t *r, bool is_left);
+void keyball_on_apply_motion_to_mouse_scroll(keyball_motion_t *m, report_mouse_t *r);
 
 //////////////////////////////////////////////////////////////////////////////
 // Public API functions

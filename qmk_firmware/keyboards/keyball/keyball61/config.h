@@ -26,6 +26,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define MATRIX_MASKED
 #define DEBOUNCE            5
 
+#define PMW33XX_CS_PIN             B6
+#define ROTATIONAL_TRANSFORM_ANGLE 90
+#define POINTING_DEVICE_INVERT_Y
+
 // Split parameters
 #define SOFT_SERIAL_PIN         D2
 #define SPLIT_HAND_MATRIX_GRID  F7, D7
