@@ -6,6 +6,7 @@
     },
     "manufacturer": "Yowkees",
     "keyboard_name": "Keyball61",
+    "development_board": "promicro",
     "rgblight": {
         "driver": "ws2812"
     },
